@@ -1,6 +1,7 @@
 package main
 
 const (
+	// should be LTSV
 	SCRIPT_BRANCHES string = `
 	for repo in /var/www/vhosts/*
 	do

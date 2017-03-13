@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -75,12 +76,23 @@ func cmdBranches(c *cli.Context) error {
 
 	result := ssh.Run(q.server, SCRIPT_BRANCHES)
 
+	// TODO: method-nize
+	var vs []vhost
 	for _, line := range strings.Split(result.Stdout, "\n") {
 		if line == "" {
 			continue
 		}
-		fmt.Println(line)
+		// TODO: trim unneeded chars e.g. \r
+		l := strings.Split(line, "\t")
+		if len(l) != 2 {
+			return errors.New("invalid line")
+		}
+		vs = append(vs, vhost{path: l[0], branch: l[1]})
 	}
+	q.vhosts = vs
+	// TODO: echoing
+	// fmt.Printf("%#v\n", q)
+
 	return nil
 }
 
@@ -131,8 +143,13 @@ func (cfg *config) load() error {
 	return toml.NewEncoder(f).Encode(cfg)
 }
 
+type vhost struct {
+	path, branch string
+}
+
 type qa struct {
 	server *ssh.Session
+	vhosts []vhost
 }
 
 func (q *qa) init() error {
