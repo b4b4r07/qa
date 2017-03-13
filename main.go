@@ -3,10 +3,16 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/BurntSushi/toml"
 	"github.com/b4b4r07/qa/ssh"
 	"github.com/urfave/cli"
 )
+
+type config struct {
+	SelectCmd string `toml:"selectcmd"`
+}
 
 var commands = []cli.Command{
 	{
@@ -57,7 +63,7 @@ func cmdSSH(c *cli.Context) error {
 
 func cmdBranches(c *cli.Context) error {
 	var q qa
-	if err := s.init(); err != nil {
+	if err := q.init(); err != nil {
 		return err
 	}
 	r := ssh.Run(q.session, SCRIPT_BRANCHES)
@@ -77,6 +83,34 @@ func cmdConfig(c *cli.Context) error {
 	return nil
 }
 
+func (cfg *config) load() error {
+	dir := filepath.Join(os.Getenv("HOME"), ".config", "qa")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("cannot create directory: %v", err)
+	}
+	file := filepath.Join(dir, "config.toml")
+
+	_, err := os.Stat(file)
+	if err == nil {
+		_, err := toml.DecodeFile(file, cfg)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if !os.IsNotExist(err) {
+		return err
+	}
+	f, err := os.Create(file)
+	if err != nil {
+		return err
+	}
+
+	cfg.SelectCmd = "peco"
+	return toml.NewEncoder(f).Encode(cfg)
+}
+
 type qa struct {
 	session *ssh.Session
 }
@@ -90,6 +124,11 @@ func (q *qa) init() error {
 }
 
 func main() {
+	var cfg config
+	err := cfg.load()
+	if err != nil {
+		panic(err)
+	}
 	app := cli.NewApp()
 	app.Name = "qa"
 	app.Usage = "qa tool"
