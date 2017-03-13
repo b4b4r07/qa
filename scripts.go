@@ -1,7 +1,7 @@
 package main
 
 const (
-	gitStatus string = `
+	SCRIPT_BRANCHES string = `
 	for repo in /var/www/vhosts/*
 	do
 		cd "$repo/current" &>/dev/null

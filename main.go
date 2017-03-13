@@ -1,7 +1,8 @@
 package main
 
 import (
-	// "fmt"
+	"fmt"
+	"os"
 
 	"github.com/b4b4r07/qa/ssh"
 	"github.com/urfave/cli"
@@ -37,18 +38,32 @@ func cmdSSH(c *cli.Context) error {
 }
 
 func cmdBranches(c *cli.Context) error {
+	var q qa
+	if err := s.init(); err != nil {
+		return err
+	}
+	r := ssh.Run(q.session, SCRIPT_BRANCHES)
+	fmt.Printf(r.Stdout)
 	return nil
 }
 
-func main() {
-	session, err := ssh.DialKeyFile(
+type qa struct {
+	session *ssh.Session
+}
+
+func (q *qa) init() error {
+	hoge, err := ssh.DialKeyFile(
 		"strong-panda", "b4b4r07", "/Users/b4b4r07/.ssh/id_rsa", 10,
 	)
-	if err != nil {
-		panic(err)
-	}
-	session.Shell()
-	// r := ssh.Run(session, tail)
-	// fmt.Printf(r.Stdout)
-	// fmt.Printf("%#v\n", r)
+	q.session = hoge
+	return err
+}
+
+func main() {
+	app := cli.NewApp()
+	app.Name = "qa"
+	app.Usage = "qa tool"
+	app.Version = "0.1"
+	app.Commands = commands
+	app.Run(os.Args)
 }
