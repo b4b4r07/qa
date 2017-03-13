@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/b4b4r07/qa/ssh"
@@ -12,6 +13,11 @@ import (
 
 type config struct {
 	SelectCmd string `toml:"selectcmd"`
+
+	Hostname     string `toml:"hostname"`
+	Username     string `toml:"username"`
+	IdentifyFile string `toml:"identify_file"`
+	Timeout      int    `toml:"timeout"`
 }
 
 var commands = []cli.Command{
@@ -47,7 +53,7 @@ var commands = []cli.Command{
 		Name:    "run",
 		Aliases: []string{},
 		Usage:   "run command",
-		Action:  cmdRunCmd,
+		Action:  cmdRunCommand,
 	},
 	{
 		Name:    "config",
@@ -66,8 +72,15 @@ func cmdBranches(c *cli.Context) error {
 	if err := q.init(); err != nil {
 		return err
 	}
-	r := ssh.Run(q.session, SCRIPT_BRANCHES)
-	fmt.Printf(r.Stdout)
+
+	result := ssh.Run(q.server, SCRIPT_BRANCHES)
+
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		if line == "" {
+			continue
+		}
+		fmt.Println(line)
+	}
 	return nil
 }
 
@@ -75,13 +88,15 @@ func cmdTailLog(c *cli.Context) error {
 	return nil
 }
 
-func cmdRunCmd(c *cli.Context) error {
+func cmdRunCommand(c *cli.Context) error {
 	return nil
 }
 
 func cmdConfig(c *cli.Context) error {
 	return nil
 }
+
+func selectEnv() {}
 
 func (cfg *config) load() error {
 	dir := filepath.Join(os.Getenv("HOME"), ".config", "qa")
@@ -108,27 +123,32 @@ func (cfg *config) load() error {
 	}
 
 	cfg.SelectCmd = "peco"
+	cfg.Hostname = "example.com"
+	cfg.Username = os.Getenv("USER")
+	cfg.IdentifyFile = filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa")
+	cfg.Timeout = 10
+
 	return toml.NewEncoder(f).Encode(cfg)
 }
 
 type qa struct {
-	session *ssh.Session
+	server *ssh.Session
 }
 
 func (q *qa) init() error {
-	session, err := ssh.DialKeyFile(
-		"strong-panda", "b4b4r07", "/Users/b4b4r07/.ssh/id_rsa", 10,
+	var cfg config
+	err := cfg.load()
+	if err != nil {
+		return err
+	}
+	conn, err := ssh.DialKeyFile(
+		cfg.Hostname, cfg.Username, cfg.IdentifyFile, cfg.Timeout,
 	)
-	q.session = session
+	q.server = conn
 	return err
 }
 
 func main() {
-	var cfg config
-	err := cfg.load()
-	if err != nil {
-		panic(err)
-	}
 	app := cli.NewApp()
 	app.Name = "qa"
 	app.Usage = "qa tool"

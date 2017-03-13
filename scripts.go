@@ -6,7 +6,7 @@ const (
 	do
 		cd "$repo/current" &>/dev/null
 		branch="$(git rev-parse --abbrev-ref HEAD)"
-		echo "$repo $branch"
+		printf "$repo\t$branch\n"
 	done
 	`
 )
