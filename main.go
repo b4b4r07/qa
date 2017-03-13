@@ -22,14 +22,32 @@ var commands = []cli.Command{
 		Action:  cmdBranches,
 		Flags: []cli.Flag{
 			cli.BoolFlag{
-				Name:  "fullpath",
+				Name:  "all",
 				Usage: "",
 			},
-			cli.StringFlag{
-				Name:  "pattern",
+			cli.BoolFlag{
+				Name:  "ago",
 				Usage: "",
 			},
 		},
+	},
+	{
+		Name:    "tail",
+		Aliases: []string{},
+		Usage:   "tail log",
+		Action:  cmdTailLog,
+	},
+	{
+		Name:    "run",
+		Aliases: []string{},
+		Usage:   "run command",
+		Action:  cmdRunCmd,
+	},
+	{
+		Name:    "config",
+		Aliases: []string{"c"},
+		Usage:   "config qa tool",
+		Action:  cmdConfig,
 	},
 }
 
@@ -47,15 +65,27 @@ func cmdBranches(c *cli.Context) error {
 	return nil
 }
 
+func cmdTailLog(c *cli.Context) error {
+	return nil
+}
+
+func cmdRunCmd(c *cli.Context) error {
+	return nil
+}
+
+func cmdConfig(c *cli.Context) error {
+	return nil
+}
+
 type qa struct {
 	session *ssh.Session
 }
 
 func (q *qa) init() error {
-	hoge, err := ssh.DialKeyFile(
+	session, err := ssh.DialKeyFile(
 		"strong-panda", "b4b4r07", "/Users/b4b4r07/.ssh/id_rsa", 10,
 	)
-	q.session = hoge
+	q.session = session
 	return err
 }
 
