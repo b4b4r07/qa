@@ -21,6 +21,7 @@ import (
 type qa struct {
 	server *ssh.Session
 	vhosts []vhost
+	config config
 }
 
 type vhost struct {
@@ -40,12 +41,17 @@ type config struct {
 	Editor    string `toml:"editor"`
 	TailCmd   string `toml:"tailcmd"`
 
-	Scripts string `toml:"scripts"`
+	Scripts scripts `toml:"scripts"`
 
-	Hostname     string `toml:"hostname"`
-	Username     string `toml:"username"`
-	IdentifyFile string `toml:"identify_file"`
-	Timeout      int    `toml:"timeout"`
+	Hostname      string `toml:"hostname"`
+	Username      string `toml:"username"`
+	IdentifyFile  string `toml:"identify_file"`
+	Timeout       int    `toml:"timeout"`
+	LogPathFormat string `toml:"log_path_format"`
+}
+
+type scripts struct {
+	Branches string `toml:"branches"`
 }
 
 var commands = []cli.Command{
@@ -76,12 +82,6 @@ var commands = []cli.Command{
 		Aliases: []string{"l"},
 		Usage:   "tail log",
 		Action:  cmdTailLog,
-	},
-	{
-		Name:    "run",
-		Aliases: []string{},
-		Usage:   "run command",
-		Action:  cmdRunCommand,
 	},
 	{
 		Name:    "config",
@@ -117,11 +117,6 @@ func cmdTailLog(c *cli.Context) error {
 		return err
 	}
 
-	var cfg config
-	if err := cfg.load(); err != nil {
-		return err
-	}
-
 	session, err := q.server.Client.NewSession()
 	if err != nil {
 		return err
@@ -137,14 +132,28 @@ func cmdTailLog(c *cli.Context) error {
 		return err
 	}
 
-	log := "/var/www/vhosts/api-dev001/log/api-dev001-app_error_log"
-	if cfg.TailCmd == "" {
+	var text string
+	for _, vhost := range q.vhosts {
+		text += fmt.Sprintf("%s\n", vhost.name)
+	}
+
+	var buf bytes.Buffer
+	err = q.config.runfilter(q.config.SelectCmd, strings.NewReader(text), &buf)
+	if err != nil {
+		return err
+	}
+	if buf.Len() == 0 {
+		return errors.New("No files selected")
+	}
+
+	name := strings.Replace(buf.String(), "\n", "", -1)
+	if q.config.TailCmd == "" {
 		return errors.New("tail command: not found")
 	}
-	cmd := strings.Join([]string{cfg.TailCmd, log}, " ")
+	cmd := strings.Join([]string{q.config.TailCmd, fmt.Sprintf(q.config.LogPathFormat, name, name)}, " ")
 
-	go pipe(cfg.Hostname, stdoutPipe, stdout, os.Stdout)
-	go pipe(cfg.Hostname, stderrPipe, stderr, os.Stderr)
+	go pipe(q.config.Hostname, stdoutPipe, stdout, os.Stdout)
+	go pipe(q.config.Hostname, stderrPipe, stderr, os.Stderr)
 
 	return session.Run(cmd)
 }
@@ -158,20 +167,16 @@ func pipe(host, name string, r io.Reader, w io.Writer) {
 		w.Write(newline)
 	}
 }
-func cmdRunCommand(c *cli.Context) error {
-	return nil
-}
 
 // inspired by mattn/memo
 func cmdConfig(c *cli.Context) error {
-	var cfg config
-	err := cfg.load()
-	if err != nil {
+	var q qa
+	if err := q.init(); err != nil {
 		return err
 	}
 
 	file := filepath.Join(os.Getenv("HOME"), ".config", "qa", "config.toml")
-	return cfg.runcmd(cfg.Editor, file)
+	return q.config.runcmd(q.config.Editor, file)
 }
 
 func (cfg *config) runcmd(command string, args ...string) error {
@@ -183,7 +188,13 @@ func (cfg *config) runcmd(command string, args ...string) error {
 	return cmd.Run()
 }
 
-func selectEnv() {}
+func (cfg *config) runfilter(command string, r io.Reader, w io.Writer) error {
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = w
+	cmd.Stdin = r
+	return cmd.Run()
+}
 
 func (cfg *config) load() error {
 	dir := filepath.Join(os.Getenv("HOME"), ".config", "qa")
@@ -209,7 +220,7 @@ func (cfg *config) load() error {
 		return err
 	}
 
-	cfg.SelectCmd = "peco"
+	cfg.SelectCmd = "fzf"
 	cfg.TailCmd = "tail -f"
 	cfg.Editor = func() string {
 		if len(os.Getenv("EDITOR")) > 0 {
@@ -217,11 +228,11 @@ func (cfg *config) load() error {
 		}
 		return "vim"
 	}()
-	cfg.Scripts = ""
 	cfg.Hostname = "example.com"
 	cfg.Username = os.Getenv("USER")
 	cfg.IdentifyFile = filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa")
 	cfg.Timeout = 10
+	cfg.LogPathFormat = `/var/www/vhosts/%s/log/%s-app_error_log`
 
 	return toml.NewEncoder(f).Encode(cfg)
 }
@@ -232,6 +243,8 @@ func (q *qa) init() error {
 	if err != nil {
 		return err
 	}
+	q.config = cfg
+
 	conn, err := ssh.DialKeyFile(
 		cfg.Hostname, cfg.Username, cfg.IdentifyFile, cfg.Timeout,
 	)
@@ -240,10 +253,10 @@ func (q *qa) init() error {
 	}
 	q.server = conn
 
-	if cfg.Scripts == "" {
+	if cfg.Scripts.Branches == "" {
 		return errors.New("error: script is not set in toml file")
 	}
-	res := ssh.Run(q.server, cfg.Scripts)
+	res := ssh.Run(q.server, cfg.Scripts.Branches)
 	var vs []vhost
 	b := bytes.NewBufferString(res.Stdout)
 	reader := ltsv.NewReader(b)
