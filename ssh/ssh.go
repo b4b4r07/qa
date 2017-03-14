@@ -205,6 +205,37 @@ func Run(session *Session, cmd string) Results {
 	return Results{err, rc, session.out.String(), session.err.String()}
 }
 
+func (s *Session) Exec(command string) *Results {
+	session, err := s.client.NewSession()
+	res := new(Results)
+	if err != nil {
+		errText := err.Error()
+		res.Stdout = ""
+		res.Stderr = errText
+	}
+
+	var bout, berr bytes.Buffer
+
+	session.Stdout = &bout
+	session.Stderr = &berr
+
+	session.Run(command)
+	session.Close()
+
+	outString := bout.String()
+	errString := berr.String()
+	res = &Results{Stdout: outString, Stderr: errString}
+
+	// if len(errString) != 0 {
+	// 	res.Stdout = outString
+	// 	res.Stderr = errString
+	// } else {
+	// 	res.Stdout = outString
+	// 	res.Stderr = ""
+	// }
+	return res
+}
+
 // func RunWithStream(cmds []string) {
 // 	cmd := exec.Command(cmds)
 // 	stdin, err := cmd.StdinPipe()

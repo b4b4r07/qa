@@ -83,6 +83,12 @@ func cmdBranches(c *cli.Context) error {
 		fmt.Fprintf(w, "%s \t %s\n", vhost.name, vhost.branch)
 	}
 	w.Flush()
+	// r = q.server.Exec("pwd")
+	// fmt.Printf(r.Stdout)
+	// r = q.server.Exec("pwd")
+	// fmt.Printf(r.Stdout)
+	// r = q.server.Exec("pwd")
+	// fmt.Printf(r.Stdout)
 
 	return nil
 }

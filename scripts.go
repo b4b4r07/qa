@@ -5,12 +5,12 @@ const (
 	SCRIPT_BRANCHES string = `
 	for repo in /var/www/vhosts/*
 	do
-		cd "$repo/current" &>/dev/null
+		(
+		cd "$repo/current" &>/dev/null || continue
 		branch="$(git rev-parse --abbrev-ref HEAD)"
 		printf "$repo\t$branch\n"
+		) &
 	done
-	`
-
-	SCRIPT_VHOST string = `
+	wait
 	`
 )
