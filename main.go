@@ -1,7 +1,7 @@
 package main
 
 import (
-	"errors"
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/b4b4r07/qa/ssh"
+	"github.com/najeira/ltsv"
 	"github.com/urfave/cli"
 )
 
@@ -83,12 +84,6 @@ func cmdBranches(c *cli.Context) error {
 		fmt.Fprintf(w, "%s \t %s\n", vhost.name, vhost.branch)
 	}
 	w.Flush()
-	// r = q.server.Exec("pwd")
-	// fmt.Printf(r.Stdout)
-	// r = q.server.Exec("pwd")
-	// fmt.Printf(r.Stdout)
-	// r = q.server.Exec("pwd")
-	// fmt.Printf(r.Stdout)
 
 	return nil
 }
@@ -164,7 +159,8 @@ func (cfg *config) load() error {
 }
 
 type vhost struct {
-	name, path, branch string
+	name, path   string
+	branch, date string
 }
 
 type qa struct {
@@ -186,18 +182,25 @@ func (q *qa) init() error {
 	}
 	q.server = conn
 
-	result := ssh.Run(q.server, SCRIPT_BRANCHES)
+	res := ssh.Run(q.server, SCRIPT_BRANCHES)
 	var vs []vhost
-	for _, line := range strings.Split(result.Stdout, "\n") {
-		if line == "" {
+	// for _, line := range strings.Split(res.Stdout, "\n") {
+	b := bytes.NewBufferString(res.Stdout)
+	reader := ltsv.NewReader(b)
+	data, err := reader.ReadAll()
+	if err != nil {
+		return err
+	}
+	for _, host := range data {
+		if host["branch"] == "" {
 			continue
 		}
-		// TODO: trim unneeded chars e.g. \r
-		l := strings.Split(line, "\t")
-		if len(l) != 2 {
-			return errors.New("invalid line")
-		}
-		vs = append(vs, vhost{name: filepath.Base(l[0]), path: l[0], branch: l[1]})
+		vs = append(vs, vhost{
+			name:   host["name"],
+			path:   host["path"],
+			branch: host["branch"],
+			date:   host["date"],
+		})
 	}
 	q.vhosts = vs
 
