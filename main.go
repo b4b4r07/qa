@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,6 +19,8 @@ import (
 type config struct {
 	SelectCmd string `toml:"selectcmd"`
 	Editor    string `toml:"editor"`
+
+	Scripts string `toml:"scripts"`
 
 	Hostname     string `toml:"hostname"`
 	Username     string `toml:"username"`
@@ -150,6 +153,7 @@ func (cfg *config) load() error {
 		}
 		return "vim"
 	}()
+	cfg.Scripts = ""
 	cfg.Hostname = "example.com"
 	cfg.Username = os.Getenv("USER")
 	cfg.IdentifyFile = filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa")
@@ -182,7 +186,10 @@ func (q *qa) init() error {
 	}
 	q.server = conn
 
-	res := ssh.Run(q.server, SCRIPT_BRANCHES)
+	if cfg.Scripts == "" {
+		return errors.New("error: script is not set in toml file")
+	}
+	res := ssh.Run(q.server, cfg.Scripts)
 	var vs []vhost
 	// for _, line := range strings.Split(res.Stdout, "\n") {
 	b := bytes.NewBufferString(res.Stdout)
