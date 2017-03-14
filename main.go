@@ -33,17 +33,23 @@ type vhost struct {
 var newline = []byte{'\n'}
 
 const (
+	Name        = "panda"
+	Version     = "0.1"
+	Description = "A CLI for QA tools"
+
 	stdoutPipe = "\033[1;37m" + "out >>" + "\033[0m"
 	stderrPipe = "\033[1;31m" + "err >>" + "\033[0m"
 )
 
 type config struct {
+	// TODO:
 	SelectCmd string `toml:"selectcmd"`
 	Editor    string `toml:"editor"`
 	TailCmd   string `toml:"tailcmd"`
 
 	Scripts scripts `toml:"scripts"`
 
+	// TODO:
 	Hostname      string `toml:"hostname"`
 	Port          int32  `toml:"port"`
 	Username      string `toml:"username"`
@@ -82,13 +88,13 @@ var commands = []cli.Command{
 	{
 		Name:    "log",
 		Aliases: []string{"l"},
-		Usage:   "tail log",
+		Usage:   "do tail server log",
 		Action:  cmdTailLog,
 	},
 	{
 		Name:    "config",
 		Aliases: []string{"c"},
-		Usage:   "config qa tool",
+		Usage:   "configuare",
 		Action:  cmdConfig,
 	},
 }
@@ -117,6 +123,7 @@ func cmdBranches(c *cli.Context) error {
 	w := new(tabwriter.Writer)
 	w.Init(os.Stdout, 0, 8, 0, '\t', 0)
 	for _, vhost := range q.vhosts {
+		// TODO: flag
 		fmt.Fprintf(w, "%s \t %s\n", vhost.name, vhost.branch)
 	}
 	w.Flush()
@@ -130,6 +137,7 @@ func cmdTailLog(c *cli.Context) error {
 		return err
 	}
 
+	// make new session
 	session, err := q.server.Client.NewSession()
 	if err != nil {
 		return err
@@ -171,6 +179,18 @@ func cmdTailLog(c *cli.Context) error {
 	return session.Run(cmd)
 }
 
+// inspired by mattn/memo
+func cmdConfig(c *cli.Context) error {
+	// TODO:
+	var q qa
+	if err := q.init(); err != nil {
+		return err
+	}
+
+	file := filepath.Join(os.Getenv("HOME"), ".config", "qa", "config.toml")
+	return q.config.runcmd(q.config.Editor, file)
+}
+
 func pipe(host, name string, r io.Reader, w io.Writer) {
 	prefix := fmt.Sprintf("%-10.10s %s ", host, name)
 	scanner := bufio.NewScanner(r)
@@ -181,17 +201,7 @@ func pipe(host, name string, r io.Reader, w io.Writer) {
 	}
 }
 
-// inspired by mattn/memo
-func cmdConfig(c *cli.Context) error {
-	var q qa
-	if err := q.init(); err != nil {
-		return err
-	}
-
-	file := filepath.Join(os.Getenv("HOME"), ".config", "qa", "config.toml")
-	return q.config.runcmd(q.config.Editor, file)
-}
-
+// TODO: rename all cfg methods
 func (cfg *config) runcmd(command string, args ...string) error {
 	command = fmt.Sprintf("%s %s", command, strings.Join(args, " "))
 	cmd := exec.Command("sh", "-c", command)
@@ -202,6 +212,7 @@ func (cfg *config) runcmd(command string, args ...string) error {
 }
 
 func (cfg *config) runfilter(command string, r io.Reader, w io.Writer) error {
+	// TODO:
 	cmd := exec.Command("sh", "-c", command)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = w
@@ -236,7 +247,7 @@ func (cfg *config) load() error {
 	cfg.SelectCmd = "fzf"
 	cfg.TailCmd = "tail -f"
 	cfg.Editor = func() string {
-		if len(os.Getenv("EDITOR")) > 0 {
+		if os.Getenv("EDITOR") != "" {
 			return os.Getenv("EDITOR")
 		}
 		return "vim"
@@ -267,10 +278,12 @@ func (q *qa) init() error {
 	}
 	q.server = conn
 
+	// TODO:
 	if cfg.Scripts.Branches == "" {
 		return errors.New("error: script is not set in toml file")
 	}
 	res := ssh.Run(q.server, cfg.Scripts.Branches)
+
 	var vs []vhost
 	b := bytes.NewBufferString(res.Stdout)
 	reader := ltsv.NewReader(b)
@@ -296,9 +309,9 @@ func (q *qa) init() error {
 
 func main() {
 	app := cli.NewApp()
-	app.Name = "qa"
-	app.Usage = "qa tool"
-	app.Version = "0.1"
+	app.Name = Name
+	app.Usage = Description
+	app.Version = Version
 	app.Commands = commands
 	app.Run(os.Args)
 }
