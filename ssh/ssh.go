@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -57,37 +56,68 @@ func (s *Session) Clear() {
 	s.err.Reset()
 }
 
-// Shell opens an command shell on the remote host
-func (s *Session) Shell() {
-	s.SSH.Stdin = os.Stdin
-	s.SSH.Stdout = os.Stdout
-	s.SSH.Stderr = os.Stderr
-
-	modes := ssh.TerminalModes{
-		ssh.ECHO:          1,
-		ssh.TTY_OP_ISPEED: 14400,
-		ssh.TTY_OP_OSPEED: 14400,
-	}
-	if err := s.SSH.RequestPty("xterm", 80, 40, modes); err != nil {
-		log.Fatal(err)
-	}
-
-	// configure local terminal via fd 0 (stdin)
-	oldState, err := terminal.MakeRaw(0)
+func OpenShell(privateKey []byte, addr string, port int32, user string) error {
+	signer, err := ssh.ParsePrivateKey(privateKey)
 	if err != nil {
-		log.Fatal(err)
+		return err
+	}
+
+	// Create client config
+	config := &ssh.ClientConfig{
+		User: user,
+		Auth: []ssh.AuthMethod{
+			ssh.PublicKeys(signer),
+		},
+	}
+
+	// Connect to ssh server
+	conn, err := ssh.Dial("tcp", fmt.Sprintf("%v:%v", addr, port), config)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	// Create a session
+	session, err := conn.NewSession()
+	if err != nil {
+		return err
+	}
+
+	// The following two lines makes the terminal work properly because of
+	// side-effects I don't understand.
+	fd := int(os.Stdin.Fd())
+	oldState, err := terminal.MakeRaw(fd)
+	if err != nil {
+		return err
 	}
 	defer terminal.Restore(0, oldState)
 
-	// run shell
-	if err := s.SSH.Shell(); err != nil {
-		log.Fatal(err)
+	session.Stdout = os.Stdout
+	session.Stderr = os.Stderr
+	session.Stdin = os.Stdin
+
+	termWidth, termHeight, err := terminal.GetSize(fd)
+	if err != nil {
+		return err
 	}
 
-	// wait for remote shell exit
-	if err := s.SSH.Wait(); err != nil {
-		log.Fatal(err)
+	// Set up terminal modes
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          1,     // enable echoing
+		ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
+		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
 	}
+
+	// Request pseudo terminal
+	if err := session.RequestPty("xterm-256color", termHeight, termWidth, modes); err != nil {
+		return err
+	}
+
+	if err := session.Shell(); err != nil {
+		return err
+	}
+
+	return session.Wait()
 }
 
 func (k *keychain) PrivateKey(text []byte) error {

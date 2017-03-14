@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,6 +45,7 @@ type config struct {
 	Scripts scripts `toml:"scripts"`
 
 	Hostname      string `toml:"hostname"`
+	Port          int32  `toml:"port"`
 	Username      string `toml:"username"`
 	IdentifyFile  string `toml:"identify_file"`
 	Timeout       int    `toml:"timeout"`
@@ -92,7 +94,18 @@ var commands = []cli.Command{
 }
 
 func cmdSSH(c *cli.Context) error {
-	return nil
+	var cfg config
+	err := cfg.load()
+	if err != nil {
+		return err
+	}
+
+	privKey, err := ioutil.ReadFile(cfg.IdentifyFile)
+	if err != nil {
+		return err
+	}
+
+	return ssh.OpenShell(privKey, cfg.Hostname, cfg.Port, cfg.Username)
 }
 
 func cmdBranches(c *cli.Context) error {
@@ -229,6 +242,7 @@ func (cfg *config) load() error {
 		return "vim"
 	}()
 	cfg.Hostname = "example.com"
+	cfg.Port = 22
 	cfg.Username = os.Getenv("USER")
 	cfg.IdentifyFile = filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa")
 	cfg.Timeout = 10
