@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,9 +18,27 @@ import (
 	"github.com/urfave/cli"
 )
 
+type qa struct {
+	server *ssh.Session
+	vhosts []vhost
+}
+
+type vhost struct {
+	name, path   string
+	branch, date string
+}
+
+var newline = []byte{'\n'}
+
+const (
+	stdoutPipe = "\033[1;37m" + "out >>" + "\033[0m"
+	stderrPipe = "\033[1;31m" + "err >>" + "\033[0m"
+)
+
 type config struct {
 	SelectCmd string `toml:"selectcmd"`
 	Editor    string `toml:"editor"`
+	TailCmd   string `toml:"tailcmd"`
 
 	Scripts string `toml:"scripts"`
 
@@ -92,9 +112,52 @@ func cmdBranches(c *cli.Context) error {
 }
 
 func cmdTailLog(c *cli.Context) error {
-	return nil
+	var q qa
+	if err := q.init(); err != nil {
+		return err
+	}
+
+	var cfg config
+	if err := cfg.load(); err != nil {
+		return err
+	}
+
+	session, err := q.server.Client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		return err
+	}
+
+	log := "/var/www/vhosts/api-dev001/log/api-dev001-app_error_log"
+	if cfg.TailCmd == "" {
+		return errors.New("tail command: not found")
+	}
+	cmd := strings.Join([]string{cfg.TailCmd, log}, " ")
+
+	go pipe(cfg.Hostname, stdoutPipe, stdout, os.Stdout)
+	go pipe(cfg.Hostname, stderrPipe, stderr, os.Stderr)
+
+	return session.Run(cmd)
 }
 
+func pipe(host, name string, r io.Reader, w io.Writer) {
+	prefix := fmt.Sprintf("%-10.10s %s ", host, name)
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		fmt.Fprintf(w, prefix)
+		w.Write(scanner.Bytes())
+		w.Write(newline)
+	}
+}
 func cmdRunCommand(c *cli.Context) error {
 	return nil
 }
@@ -147,6 +210,7 @@ func (cfg *config) load() error {
 	}
 
 	cfg.SelectCmd = "peco"
+	cfg.TailCmd = "tail -f"
 	cfg.Editor = func() string {
 		if len(os.Getenv("EDITOR")) > 0 {
 			return os.Getenv("EDITOR")
@@ -160,16 +224,6 @@ func (cfg *config) load() error {
 	cfg.Timeout = 10
 
 	return toml.NewEncoder(f).Encode(cfg)
-}
-
-type vhost struct {
-	name, path   string
-	branch, date string
-}
-
-type qa struct {
-	server *ssh.Session
-	vhosts []vhost
 }
 
 func (q *qa) init() error {
@@ -191,7 +245,6 @@ func (q *qa) init() error {
 	}
 	res := ssh.Run(q.server, cfg.Scripts)
 	var vs []vhost
-	// for _, line := range strings.Split(res.Stdout, "\n") {
 	b := bytes.NewBufferString(res.Stdout)
 	reader := ltsv.NewReader(b)
 	data, err := reader.ReadAll()

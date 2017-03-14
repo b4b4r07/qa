@@ -34,8 +34,8 @@ type Results struct {
 
 // Session allows for multiple commands to be run against an ssh connection
 type Session struct {
-	client   *ssh.Client
-	ssh      *ssh.Session
+	Client   *ssh.Client
+	SSH      *ssh.Session
 	out, err bytes.Buffer
 }
 
@@ -45,9 +45,9 @@ type keychain struct {
 
 // Close closes the ssh session
 func (s *Session) Close() {
-	s.ssh.Close()
-	if s.client != nil {
-		s.client.Close()
+	s.SSH.Close()
+	if s.Client != nil {
+		s.Client.Close()
 	}
 }
 
@@ -59,16 +59,16 @@ func (s *Session) Clear() {
 
 // Shell opens an command shell on the remote host
 func (s *Session) Shell() {
-	s.ssh.Stdin = os.Stdin
-	s.ssh.Stdout = os.Stdout
-	s.ssh.Stderr = os.Stderr
+	s.SSH.Stdin = os.Stdin
+	s.SSH.Stdout = os.Stdout
+	s.SSH.Stderr = os.Stderr
 
 	modes := ssh.TerminalModes{
 		ssh.ECHO:          1,
 		ssh.TTY_OP_ISPEED: 14400,
 		ssh.TTY_OP_OSPEED: 14400,
 	}
-	if err := s.ssh.RequestPty("xterm", 80, 40, modes); err != nil {
+	if err := s.SSH.RequestPty("xterm", 80, 40, modes); err != nil {
 		log.Fatal(err)
 	}
 
@@ -80,12 +80,12 @@ func (s *Session) Shell() {
 	defer terminal.Restore(0, oldState)
 
 	// run shell
-	if err := s.ssh.Shell(); err != nil {
+	if err := s.SSH.Shell(); err != nil {
 		log.Fatal(err)
 	}
 
 	// wait for remote shell exit
-	if err := s.ssh.Wait(); err != nil {
+	if err := s.SSH.Wait(); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -174,7 +174,7 @@ func NewSession(client *ssh.Client) (*Session, error) {
 		return nil, err
 	}
 
-	s := &Session{ssh: session, client: client}
+	s := &Session{SSH: session, Client: client}
 
 	// Set up terminal modes
 	modes := ssh.TerminalModes{
@@ -197,7 +197,7 @@ func NewSession(client *ssh.Client) (*Session, error) {
 func Run(session *Session, cmd string) Results {
 	var rc int
 	var err error
-	if err = session.ssh.Run(cmd); err != nil {
+	if err = session.SSH.Run(cmd); err != nil {
 		if err2, ok := err.(*ssh.ExitError); ok {
 			rc = err2.Waitmsg.ExitStatus()
 		}
@@ -206,7 +206,7 @@ func Run(session *Session, cmd string) Results {
 }
 
 func (s *Session) Exec(command string) *Results {
-	session, err := s.client.NewSession()
+	session, err := s.Client.NewSession()
 	res := new(Results)
 	if err != nil {
 		errText := err.Error()
