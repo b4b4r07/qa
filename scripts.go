@@ -10,4 +10,7 @@ const (
 		printf "$repo\t$branch\n"
 	done
 	`
+
+	SCRIPT_VHOST string = `
+	`
 )

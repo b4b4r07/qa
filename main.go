@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/BurntSushi/toml"
 	"github.com/b4b4r07/qa/ssh"
@@ -14,6 +16,7 @@ import (
 
 type config struct {
 	SelectCmd string `toml:"selectcmd"`
+	Editor    string `toml:"editor"`
 
 	Hostname     string `toml:"hostname"`
 	Username     string `toml:"username"`
@@ -24,14 +27,14 @@ type config struct {
 var commands = []cli.Command{
 	{
 		Name:    "ssh",
-		Aliases: []string{"s"},
-		Usage:   "ssh",
+		Aliases: []string{},
+		Usage:   "connect to host via ssh",
 		Action:  cmdSSH,
 	},
 	{
 		Name:    "branch",
 		Aliases: []string{"b"},
-		Usage:   "list branches",
+		Usage:   "list branches on host",
 		Action:  cmdBranches,
 		Flags: []cli.Flag{
 			cli.BoolFlag{
@@ -45,8 +48,8 @@ var commands = []cli.Command{
 		},
 	},
 	{
-		Name:    "tail",
-		Aliases: []string{},
+		Name:    "log",
+		Aliases: []string{"l"},
 		Usage:   "tail log",
 		Action:  cmdTailLog,
 	},
@@ -74,24 +77,12 @@ func cmdBranches(c *cli.Context) error {
 		return err
 	}
 
-	result := ssh.Run(q.server, SCRIPT_BRANCHES)
-
-	// TODO: method-nize
-	var vs []vhost
-	for _, line := range strings.Split(result.Stdout, "\n") {
-		if line == "" {
-			continue
-		}
-		// TODO: trim unneeded chars e.g. \r
-		l := strings.Split(line, "\t")
-		if len(l) != 2 {
-			return errors.New("invalid line")
-		}
-		vs = append(vs, vhost{path: l[0], branch: l[1]})
+	w := new(tabwriter.Writer)
+	w.Init(os.Stdout, 0, 8, 0, '\t', 0)
+	for _, vhost := range q.vhosts {
+		fmt.Fprintf(w, "%s \t %s\n", vhost.name, vhost.branch)
 	}
-	q.vhosts = vs
-	// TODO: echoing
-	// fmt.Printf("%#v\n", q)
+	w.Flush()
 
 	return nil
 }
@@ -104,8 +95,25 @@ func cmdRunCommand(c *cli.Context) error {
 	return nil
 }
 
+// inspired by mattn/memo
 func cmdConfig(c *cli.Context) error {
-	return nil
+	var cfg config
+	err := cfg.load()
+	if err != nil {
+		return err
+	}
+
+	file := filepath.Join(os.Getenv("HOME"), ".config", "qa", "config.toml")
+	return cfg.runcmd(cfg.Editor, file)
+}
+
+func (cfg *config) runcmd(command string, args ...string) error {
+	command = fmt.Sprintf("%s %s", command, strings.Join(args, " "))
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	cmd.Stdin = os.Stdin
+	return cmd.Run()
 }
 
 func selectEnv() {}
@@ -135,6 +143,12 @@ func (cfg *config) load() error {
 	}
 
 	cfg.SelectCmd = "peco"
+	cfg.Editor = func() string {
+		if len(os.Getenv("EDITOR")) > 0 {
+			return os.Getenv("EDITOR")
+		}
+		return "vim"
+	}()
 	cfg.Hostname = "example.com"
 	cfg.Username = os.Getenv("USER")
 	cfg.IdentifyFile = filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa")
@@ -144,7 +158,7 @@ func (cfg *config) load() error {
 }
 
 type vhost struct {
-	path, branch string
+	name, path, branch string
 }
 
 type qa struct {
@@ -161,8 +175,27 @@ func (q *qa) init() error {
 	conn, err := ssh.DialKeyFile(
 		cfg.Hostname, cfg.Username, cfg.IdentifyFile, cfg.Timeout,
 	)
+	if err != nil {
+		return err
+	}
 	q.server = conn
-	return err
+
+	result := ssh.Run(q.server, SCRIPT_BRANCHES)
+	var vs []vhost
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		if line == "" {
+			continue
+		}
+		// TODO: trim unneeded chars e.g. \r
+		l := strings.Split(line, "\t")
+		if len(l) != 2 {
+			return errors.New("invalid line")
+		}
+		vs = append(vs, vhost{name: filepath.Base(l[0]), path: l[0], branch: l[1]})
+	}
+	q.vhosts = vs
+
+	return nil
 }
 
 func main() {
