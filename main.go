@@ -36,9 +36,6 @@ const (
 	Name        = "panda"
 	Version     = "0.1"
 	Description = "A CLI for QA tools"
-
-	stdoutPipe = "\033[1;37m" + "out >>" + "\033[0m"
-	stderrPipe = "\033[1;31m" + "err >>" + "\033[0m"
 )
 
 type config struct {
@@ -60,9 +57,16 @@ type config struct {
 
 type scripts struct {
 	Branches string `toml:"branches"`
+	Paths    string `toml:"paths"`
 }
 
 var commands = []cli.Command{
+	{
+		Name:    "debug",
+		Aliases: []string{},
+		Usage:   "",
+		Action:  cmdDebug,
+	},
 	{
 		Name:    "ssh",
 		Aliases: []string{},
@@ -97,6 +101,21 @@ var commands = []cli.Command{
 		Usage:   "configuare",
 		Action:  cmdConfig,
 	},
+	{
+		Name:    "db",
+		Aliases: []string{},
+		Usage:   "connet to database",
+		Action:  cmdDB,
+	},
+}
+
+func cmdDebug(c *cli.Context) error {
+	var q qa
+	if err := q.init(); err != nil {
+		return err
+	}
+	fmt.Printf("%#v\n", q.vhosts)
+	return nil
 }
 
 func cmdSSH(c *cli.Context) error {
@@ -120,6 +139,10 @@ func cmdBranches(c *cli.Context) error {
 		return err
 	}
 
+	if err := q.setVhosts(q.config.Scripts.Branches); err != nil {
+		return err
+	}
+
 	w := new(tabwriter.Writer)
 	w.Init(os.Stdout, 0, 8, 0, '\t', 0)
 	for _, vhost := range q.vhosts {
@@ -134,6 +157,10 @@ func cmdBranches(c *cli.Context) error {
 func cmdTailLog(c *cli.Context) error {
 	var q qa
 	if err := q.init(); err != nil {
+		return err
+	}
+
+	if err := q.setVhosts(q.config.Scripts.Branches); err != nil {
 		return err
 	}
 
@@ -173,8 +200,8 @@ func cmdTailLog(c *cli.Context) error {
 	}
 	cmd := strings.Join([]string{q.config.TailCmd, fmt.Sprintf(q.config.LogPathFormat, name, name)}, " ")
 
-	go pipe(q.config.Hostname, stdoutPipe, stdout, os.Stdout)
-	go pipe(q.config.Hostname, stderrPipe, stderr, os.Stderr)
+	go pipe(stdout, os.Stdout)
+	go pipe(stderr, os.Stderr)
 
 	return session.Run(cmd)
 }
@@ -191,11 +218,13 @@ func cmdConfig(c *cli.Context) error {
 	return q.config.runcmd(q.config.Editor, file)
 }
 
-func pipe(host, name string, r io.Reader, w io.Writer) {
-	prefix := fmt.Sprintf("%-10.10s %s ", host, name)
+func cmdDB(c *cli.Context) error {
+	return nil
+}
+
+func pipe(r io.Reader, w io.Writer) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		fmt.Fprintf(w, prefix)
 		w.Write(scanner.Bytes())
 		w.Write(newline)
 	}
@@ -262,6 +291,35 @@ func (cfg *config) load() error {
 	return toml.NewEncoder(f).Encode(cfg)
 }
 
+func (q *qa) setVhosts(script string) error {
+	if script == "" {
+		// do nothing
+		return nil
+	}
+	res := q.server.Exec(script)
+	// res := ssh.Run(q.server, script)
+
+	var vs []vhost
+	b := bytes.NewBufferString(res.Stdout)
+	reader := ltsv.NewReader(b)
+	data, err := reader.ReadAll()
+	if err != nil {
+		return err
+	}
+
+	for _, host := range data {
+		vs = append(vs, vhost{
+			name:   host["name"],
+			path:   host["path"],
+			branch: host["branch"],
+			date:   host["date"],
+		})
+	}
+	q.vhosts = vs
+
+	return nil
+}
+
 func (q *qa) init() error {
 	var cfg config
 	err := cfg.load()
@@ -278,33 +336,7 @@ func (q *qa) init() error {
 	}
 	q.server = conn
 
-	// TODO:
-	if cfg.Scripts.Branches == "" {
-		return errors.New("error: script is not set in toml file")
-	}
-	res := ssh.Run(q.server, cfg.Scripts.Branches)
-
-	var vs []vhost
-	b := bytes.NewBufferString(res.Stdout)
-	reader := ltsv.NewReader(b)
-	data, err := reader.ReadAll()
-	if err != nil {
-		return err
-	}
-	for _, host := range data {
-		if host["branch"] == "" {
-			continue
-		}
-		vs = append(vs, vhost{
-			name:   host["name"],
-			path:   host["path"],
-			branch: host["branch"],
-			date:   host["date"],
-		})
-	}
-	q.vhosts = vs
-
-	return nil
+	return q.setVhosts(cfg.Scripts.Paths)
 }
 
 func main() {
