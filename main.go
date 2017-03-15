@@ -13,8 +13,9 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/BurntSushi/toml"
 	"github.com/b4b4r07/qa/ssh"
+
+	"github.com/BurntSushi/toml"
 	"github.com/najeira/ltsv"
 	"github.com/urfave/cli"
 )
@@ -39,14 +40,19 @@ const (
 )
 
 type config struct {
-	// TODO:
+	Core    core    `toml:"core"`
+	Remote  server  `toml:"remote"`
+	Local   server  `toml:"local"`
+	Scripts scripts `toml:"scripts"`
+}
+
+type core struct {
 	SelectCmd string `toml:"selectcmd"`
 	Editor    string `toml:"editor"`
 	TailCmd   string `toml:"tailcmd"`
+}
 
-	Scripts scripts `toml:"scripts"`
-
-	// TODO:
+type server struct {
 	Hostname      string `toml:"hostname"`
 	Port          int32  `toml:"port"`
 	Username      string `toml:"username"`
@@ -61,12 +67,6 @@ type scripts struct {
 }
 
 var commands = []cli.Command{
-	{
-		Name:    "debug",
-		Aliases: []string{},
-		Usage:   "",
-		Action:  cmdDebug,
-	},
 	{
 		Name:    "ssh",
 		Aliases: []string{},
@@ -109,15 +109,6 @@ var commands = []cli.Command{
 	},
 }
 
-func cmdDebug(c *cli.Context) error {
-	var q qa
-	if err := q.init(); err != nil {
-		return err
-	}
-	fmt.Printf("%#v\n", q.vhosts)
-	return nil
-}
-
 func cmdSSH(c *cli.Context) error {
 	var cfg config
 	err := cfg.load()
@@ -125,12 +116,12 @@ func cmdSSH(c *cli.Context) error {
 		return err
 	}
 
-	privKey, err := ioutil.ReadFile(cfg.IdentifyFile)
+	privKey, err := ioutil.ReadFile(cfg.Remote.IdentifyFile)
 	if err != nil {
 		return err
 	}
 
-	return ssh.OpenShell(privKey, cfg.Hostname, cfg.Port, cfg.Username)
+	return ssh.OpenShell(privKey, cfg.Remote.Hostname, cfg.Remote.Port, cfg.Remote.Username)
 }
 
 func cmdBranches(c *cli.Context) error {
@@ -186,7 +177,7 @@ func cmdTailLog(c *cli.Context) error {
 	}
 
 	var buf bytes.Buffer
-	err = q.config.runfilter(q.config.SelectCmd, strings.NewReader(text), &buf)
+	err = q.config.runfilter(q.config.Core.SelectCmd, strings.NewReader(text), &buf)
 	if err != nil {
 		return err
 	}
@@ -195,10 +186,10 @@ func cmdTailLog(c *cli.Context) error {
 	}
 
 	name := strings.Replace(buf.String(), "\n", "", -1)
-	if q.config.TailCmd == "" {
+	if q.config.Core.TailCmd == "" {
 		return errors.New("tail command: not found")
 	}
-	cmd := strings.Join([]string{q.config.TailCmd, fmt.Sprintf(q.config.LogPathFormat, name, name)}, " ")
+	cmd := strings.Join([]string{q.config.Core.TailCmd, fmt.Sprintf(q.config.Remote.LogPathFormat, name, name)}, " ")
 
 	go pipe(stdout, os.Stdout)
 	go pipe(stderr, os.Stderr)
@@ -215,7 +206,7 @@ func cmdConfig(c *cli.Context) error {
 	}
 
 	file := filepath.Join(os.Getenv("HOME"), ".config", "qa", "config.toml")
-	return q.config.runcmd(q.config.Editor, file)
+	return q.config.runcmd(q.config.Core.Editor, file)
 }
 
 func cmdDB(c *cli.Context) error {
@@ -273,20 +264,20 @@ func (cfg *config) load() error {
 		return err
 	}
 
-	cfg.SelectCmd = "fzf"
-	cfg.TailCmd = "tail -f"
-	cfg.Editor = func() string {
+	cfg.Core.SelectCmd = "fzf"
+	cfg.Core.TailCmd = "tail -f"
+	cfg.Core.Editor = func() string {
 		if os.Getenv("EDITOR") != "" {
 			return os.Getenv("EDITOR")
 		}
 		return "vim"
 	}()
-	cfg.Hostname = "example.com"
-	cfg.Port = 22
-	cfg.Username = os.Getenv("USER")
-	cfg.IdentifyFile = filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa")
-	cfg.Timeout = 10
-	cfg.LogPathFormat = `/var/www/vhosts/%s/log/%s-app_error_log`
+	cfg.Remote.Hostname = "example.com"
+	cfg.Remote.Port = 22
+	cfg.Remote.Username = os.Getenv("USER")
+	cfg.Remote.IdentifyFile = filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa")
+	cfg.Remote.Timeout = 10
+	cfg.Remote.LogPathFormat = `/var/www/vhosts/%s/log/%s-app_error_log`
 
 	return toml.NewEncoder(f).Encode(cfg)
 }
@@ -329,7 +320,7 @@ func (q *qa) init() error {
 	q.config = cfg
 
 	conn, err := ssh.DialKeyFile(
-		cfg.Hostname, cfg.Username, cfg.IdentifyFile, cfg.Timeout,
+		cfg.Remote.Hostname, cfg.Remote.Username, cfg.Remote.IdentifyFile, cfg.Remote.Timeout,
 	)
 	if err != nil {
 		return err
