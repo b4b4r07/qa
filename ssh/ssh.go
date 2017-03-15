@@ -244,10 +244,10 @@ func (s *Session) Exec(command string) *CLI {
 		res.Stderr = errText
 	}
 
-	var bout, berr bytes.Buffer
+	var stdout, stderr bytes.Buffer
 
-	session.Stdout = &bout
-	session.Stderr = &berr
+	session.Stdout = &stdout
+	session.Stderr = &stderr
 
 	var rc int
 	if err := session.Run(command); err != nil {
@@ -257,82 +257,10 @@ func (s *Session) Exec(command string) *CLI {
 	}
 	session.Close()
 
-	outString := bout.String()
-	errString := berr.String()
-	res = &CLI{Stdout: outString, Stderr: errString, Status: rc}
-
-	// if len(errString) != 0 {
-	// 	res.Stdout = outString
-	// 	res.Stderr = errString
-	// } else {
-	// 	res.Stdout = outString
-	// 	res.Stderr = ""
-	// }
-	return res
-}
-
-// func RunWithStream(cmds []string) {
-// 	cmd := exec.Command(cmds)
-// 	stdin, err := cmd.StdinPipe()
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	stderr, err := cmd.StderrPipe()
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	stdout, err := cmd.StdoutPipe()
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	err = cmd.Start()
-// 	if err != nil {
-// 		panic(err)
-// 	}
-//
-// 	defer cmd.Wait()
-//
-// 	go io.Copy(os.Stdout, stdout)
-// 	go io.Copy(stdin, os.Stdin)
-// 	go io.Copy(os.Stderr, stderr)
-// }
-
-func exec(session *Session, cmd string, timeout int) (rc int, stdout, stderr string, err error) {
-	defer session.Close()
-
-	c := make(chan CLI)
-	go func() {
-		c <- Run(session, cmd)
-	}()
-
-	for {
-		select {
-		case r := <-c:
-			err, rc, stdout, stderr = r.Err, r.Status, r.Stdout, r.Stderr
-			return
-		case <-time.After(time.Duration(timeout) * time.Second):
-			err = fmt.Errorf("Command timed out after %d seconds", timeout)
-			return
-		}
+	return &CLI{
+		Stdout: stdout.String(),
+		Stderr: stderr.String(),
+		Status: rc,
+		Err:    err,
 	}
-}
-
-// ExecPassword will run a single command using the given password
-func ExecPassword(server, username, password, cmd string, timeout int) (rc int, stdout, stderr string, err error) {
-	var session *Session
-	session, err = DialPassword(server, username, password, timeout)
-	if err != nil {
-		return
-	}
-	return exec(session, cmd, timeout)
-}
-
-// ExecText will run a single command using the given key
-func ExecText(server, username, keytext, cmd string, timeout int) (rc int, stdout, stderr string, err error) {
-	var session *Session
-	session, err = DialKey(server, username, keytext, timeout)
-	if err != nil {
-		return
-	}
-	return exec(session, cmd, timeout)
 }
