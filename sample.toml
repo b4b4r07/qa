@@ -1,0 +1,34 @@
+[core]
+selectcmd = "fzf"
+tailcmd = "tail -f"
+editor = "vim"
+
+[remote]
+hostname = "my-panda.example.com"
+port = 10022
+username = "b4b4r07"
+identify_file = "/Users/b4b4r07/.ssh/id_rsa"
+timeout = 10
+log_path_format = "/var/www/vhosts/%s/log/%s-app_error_log"
+
+[scripts]
+paths = '''
+for path in /var/www/vhosts/*
+do
+    printf "path:$path\n"
+done
+'''
+
+branches = '''
+for path in /var/www/vhosts/*
+do
+(
+    cd "$path/current" &>/dev/null
+    name=$(basename $path)
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    date=$(git show --quiet --pretty=format:"%ar (%h)" "$branch")
+    printf "name:$name\tpath:$path\tbranch:$branch\tdate:$date\n"
+) &
+done
+wait
+'''

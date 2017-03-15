@@ -284,11 +284,13 @@ func (cfg *config) load() error {
 
 func (q *qa) setVhosts(script string) error {
 	if script == "" {
-		// do nothing
+		// do nothing if script is empty
 		return nil
 	}
 	res := q.server.Exec(script)
-	// res := ssh.Run(q.server, script)
+	if res.Status > 0 {
+		return errors.New(res.Stderr)
+	}
 
 	var vs []vhost
 	b := bytes.NewBufferString(res.Stdout)

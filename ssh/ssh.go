@@ -23,10 +23,10 @@ func (p clientPassword) Password(user string) (string, error) {
 	return string(p), nil
 }
 
-// Results comprises all info resulting from running a command via ssh
-type Results struct {
+// CLI comprises all info resulting from running a command via ssh
+type CLI struct {
 	Err    error  // internal or communication errors
-	RC     int    // the result code of the command itself
+	Status int    // the result code of the command itself
 	Stdout string // stdout from the command
 	Stderr string // stderr from the command
 }
@@ -224,7 +224,7 @@ func NewSession(client *ssh.Client) (*Session, error) {
 }
 
 // Run will run a command in the session
-func Run(session *Session, cmd string) Results {
+func Run(session *Session, cmd string) CLI {
 	var rc int
 	var err error
 	if err = session.SSH.Run(cmd); err != nil {
@@ -232,12 +232,12 @@ func Run(session *Session, cmd string) Results {
 			rc = err2.Waitmsg.ExitStatus()
 		}
 	}
-	return Results{err, rc, session.out.String(), session.err.String()}
+	return CLI{err, rc, session.out.String(), session.err.String()}
 }
 
-func (s *Session) Exec(command string) *Results {
+func (s *Session) Exec(command string) *CLI {
 	session, err := s.Client.NewSession()
-	res := new(Results)
+	res := new(CLI)
 	if err != nil {
 		errText := err.Error()
 		res.Stdout = ""
@@ -249,12 +249,17 @@ func (s *Session) Exec(command string) *Results {
 	session.Stdout = &bout
 	session.Stderr = &berr
 
-	session.Run(command)
+	var rc int
+	if err := session.Run(command); err != nil {
+		if err2, ok := err.(*ssh.ExitError); ok {
+			rc = err2.Waitmsg.ExitStatus()
+		}
+	}
 	session.Close()
 
 	outString := bout.String()
 	errString := berr.String()
-	res = &Results{Stdout: outString, Stderr: errString}
+	res = &CLI{Stdout: outString, Stderr: errString, Status: rc}
 
 	// if len(errString) != 0 {
 	// 	res.Stdout = outString
@@ -295,7 +300,7 @@ func (s *Session) Exec(command string) *Results {
 func exec(session *Session, cmd string, timeout int) (rc int, stdout, stderr string, err error) {
 	defer session.Close()
 
-	c := make(chan Results)
+	c := make(chan CLI)
 	go func() {
 		c <- Run(session, cmd)
 	}()
@@ -303,7 +308,7 @@ func exec(session *Session, cmd string, timeout int) (rc int, stdout, stderr str
 	for {
 		select {
 		case r := <-c:
-			err, rc, stdout, stderr = r.Err, r.RC, r.Stdout, r.Stderr
+			err, rc, stdout, stderr = r.Err, r.Status, r.Stdout, r.Stderr
 			return
 		case <-time.After(time.Duration(timeout) * time.Second):
 			err = fmt.Errorf("Command timed out after %d seconds", timeout)
